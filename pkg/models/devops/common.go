@@ -1,9 +1,12 @@
 /*
-Copyright 2019 The KubeSphere Authors.
+Copyright 2020 The KubeSphere Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,10 +19,7 @@ package devops
 import (
 	"fmt"
 	"github.com/fatih/structs"
-	"kubesphere.io/kubesphere/pkg/db"
-	"kubesphere.io/kubesphere/pkg/gojenkins"
-	"kubesphere.io/kubesphere/pkg/simple/client/devops_mysql"
-	"kubesphere.io/kubesphere/pkg/utils/reflectutils"
+	"kubesphere.io/kubesphere/pkg/simple/client/devops"
 	"kubesphere.io/kubesphere/pkg/utils/stringutils"
 )
 
@@ -67,6 +67,7 @@ const (
 	KS_ADMIN = "admin"
 )
 
+// define roles of DevOps
 const (
 	ProjectOwner      = "owner"
 	ProjectMaintainer = "maintainer"
@@ -76,6 +77,7 @@ const (
 
 const (
 	JenkinsAllUserRoleName = "kubesphere-user"
+	JenkinsAdminRoleName   = "admin"
 )
 
 type Role struct {
@@ -104,7 +106,8 @@ var DefaultRoles = []*Role{
 
 var AllRoleSlice = []string{ProjectDeveloper, ProjectReporter, ProjectMaintainer, ProjectOwner}
 
-var JenkinsOwnerProjectPermissionIds = &gojenkins.ProjectPermissionIds{
+// define the permission matrix of owner
+var JenkinsOwnerProjectPermissionIds = &devops.ProjectPermissionIds{
 	CredentialCreate:        true,
 	CredentialDelete:        true,
 	CredentialManageDomains: true,
@@ -125,8 +128,9 @@ var JenkinsOwnerProjectPermissionIds = &gojenkins.ProjectPermissionIds{
 	SCMTag:                  true,
 }
 
-var JenkinsProjectPermissionMap = map[string]gojenkins.ProjectPermissionIds{
-	ProjectOwner: gojenkins.ProjectPermissionIds{
+// define the permission matrix of DevOps, including owner, maintainer, developer, reporter
+var JenkinsProjectPermissionMap = map[string]devops.ProjectPermissionIds{
+	ProjectOwner: {
 		CredentialCreate:        true,
 		CredentialDelete:        true,
 		CredentialManageDomains: true,
@@ -146,7 +150,7 @@ var JenkinsProjectPermissionMap = map[string]gojenkins.ProjectPermissionIds{
 		RunUpdate:               true,
 		SCMTag:                  true,
 	},
-	ProjectMaintainer: gojenkins.ProjectPermissionIds{
+	ProjectMaintainer: {
 		CredentialCreate:        true,
 		CredentialDelete:        true,
 		CredentialManageDomains: true,
@@ -166,7 +170,7 @@ var JenkinsProjectPermissionMap = map[string]gojenkins.ProjectPermissionIds{
 		RunUpdate:               true,
 		SCMTag:                  true,
 	},
-	ProjectDeveloper: gojenkins.ProjectPermissionIds{
+	ProjectDeveloper: {
 		CredentialCreate:        false,
 		CredentialDelete:        false,
 		CredentialManageDomains: false,
@@ -186,7 +190,7 @@ var JenkinsProjectPermissionMap = map[string]gojenkins.ProjectPermissionIds{
 		RunUpdate:               true,
 		SCMTag:                  false,
 	},
-	ProjectReporter: gojenkins.ProjectPermissionIds{
+	ProjectReporter: {
 		CredentialCreate:        false,
 		CredentialDelete:        false,
 		CredentialManageDomains: false,
@@ -208,8 +212,9 @@ var JenkinsProjectPermissionMap = map[string]gojenkins.ProjectPermissionIds{
 	},
 }
 
-var JenkinsPipelinePermissionMap = map[string]gojenkins.ProjectPermissionIds{
-	ProjectOwner: gojenkins.ProjectPermissionIds{
+// define the permission matrix of pipeline, including owner, maintainer, developer, reporter
+var JenkinsPipelinePermissionMap = map[string]devops.ProjectPermissionIds{
+	ProjectOwner: {
 		CredentialCreate:        true,
 		CredentialDelete:        true,
 		CredentialManageDomains: true,
@@ -229,7 +234,7 @@ var JenkinsPipelinePermissionMap = map[string]gojenkins.ProjectPermissionIds{
 		RunUpdate:               true,
 		SCMTag:                  true,
 	},
-	ProjectMaintainer: gojenkins.ProjectPermissionIds{
+	ProjectMaintainer: {
 		CredentialCreate:        true,
 		CredentialDelete:        true,
 		CredentialManageDomains: true,
@@ -249,7 +254,7 @@ var JenkinsPipelinePermissionMap = map[string]gojenkins.ProjectPermissionIds{
 		RunUpdate:               true,
 		SCMTag:                  true,
 	},
-	ProjectDeveloper: gojenkins.ProjectPermissionIds{
+	ProjectDeveloper: {
 		CredentialCreate:        false,
 		CredentialDelete:        false,
 		CredentialManageDomains: false,
@@ -269,7 +274,7 @@ var JenkinsPipelinePermissionMap = map[string]gojenkins.ProjectPermissionIds{
 		RunUpdate:               true,
 		SCMTag:                  false,
 	},
-	ProjectReporter: gojenkins.ProjectPermissionIds{
+	ProjectReporter: {
 		CredentialCreate:        false,
 		CredentialDelete:        false,
 		CredentialManageDomains: false,
@@ -291,56 +296,22 @@ var JenkinsPipelinePermissionMap = map[string]gojenkins.ProjectPermissionIds{
 	},
 }
 
+// get roleName of the project
 func GetProjectRoleName(projectId, role string) string {
 	return fmt.Sprintf("%s-%s-project", projectId, role)
 }
 
+// get roleName of the pipeline
 func GetPipelineRoleName(projectId, role string) string {
 	return fmt.Sprintf("%s-%s-pipeline", projectId, role)
 }
 
+// get pattern string of the project
 func GetProjectRolePattern(projectId string) string {
 	return fmt.Sprintf("^%s$", projectId)
 }
 
+// get pattern string of the project
 func GetPipelineRolePattern(projectId string) string {
 	return fmt.Sprintf("^%s/.*", projectId)
-}
-
-func CheckProjectUserInRole(username, projectId string, roles []string) error {
-	if username == KS_ADMIN {
-		return nil
-	}
-	dbconn := devops_mysql.OpenDatabase()
-	membership := &DevOpsProjectMembership{}
-	err := dbconn.Select(DevOpsProjectMembershipColumns...).
-		From(DevOpsProjectMembershipTableName).
-		Where(db.And(
-			db.Eq(DevOpsProjectMembershipUsernameColumn, username),
-			db.Eq(DevOpsProjectMembershipProjectIdColumn, projectId))).LoadOne(membership)
-	if err != nil {
-		return err
-	}
-	if !reflectutils.In(membership.Role, roles) {
-		return fmt.Errorf("user [%s] in project [%s] role is not in %s", username, projectId, roles)
-	}
-	return nil
-}
-
-func GetProjectUserRole(username, projectId string) (string, error) {
-	if username == KS_ADMIN {
-		return ProjectOwner, nil
-	}
-	dbconn := devops_mysql.OpenDatabase()
-	membership := &DevOpsProjectMembership{}
-	err := dbconn.Select(DevOpsProjectMembershipColumns...).
-		From(DevOpsProjectMembershipTableName).
-		Where(db.And(
-			db.Eq(DevOpsProjectMembershipUsernameColumn, username),
-			db.Eq(DevOpsProjectMembershipProjectIdColumn, projectId))).LoadOne(membership)
-	if err != nil {
-		return "", err
-	}
-
-	return membership.Role, nil
 }

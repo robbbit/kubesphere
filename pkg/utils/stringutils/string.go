@@ -1,9 +1,12 @@
 /*
 Copyright 2018 The KubeSphere Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,10 +17,16 @@ limitations under the License.
 package stringutils
 
 import (
+	"regexp"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/asaskevich/govalidator"
 )
+
+const ansi = "[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))"
+
+var re = regexp.MustCompile(ansi)
 
 // Creates an slice of slice values not included in the other given slice.
 func Diff(base, exclude []string) (result []string) {
@@ -74,4 +83,15 @@ func Reverse(s string) string {
 		utf8.EncodeRune(buf[size-start:], r)
 	}
 	return string(buf)
+}
+
+func Split(str string, sep string) []string {
+	if str == "" {
+		return nil
+	}
+	return strings.Split(str, sep)
+}
+
+func StripAnsi(str string) string {
+	return re.ReplaceAllString(str, "")
 }

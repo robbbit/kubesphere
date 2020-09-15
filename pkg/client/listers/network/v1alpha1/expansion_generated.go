@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The KubeSphere authors.
+Copyright 2020 The KubeSphere Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
-// WorkspaceNetworkPolicyListerExpansion allows custom methods to be added to
-// WorkspaceNetworkPolicyLister.
-type WorkspaceNetworkPolicyListerExpansion interface{}
+// NamespaceNetworkPolicyListerExpansion allows custom methods to be added to
+// NamespaceNetworkPolicyLister.
+type NamespaceNetworkPolicyListerExpansion interface{}
+
+// NamespaceNetworkPolicyNamespaceListerExpansion allows custom methods to be added to
+// NamespaceNetworkPolicyNamespaceLister.
+type NamespaceNetworkPolicyNamespaceListerExpansion interface{}

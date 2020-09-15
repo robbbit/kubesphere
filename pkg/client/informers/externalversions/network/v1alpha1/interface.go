@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The KubeSphere authors.
+Copyright 2020 The KubeSphere Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,8 +24,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
-	// WorkspaceNetworkPolicies returns a WorkspaceNetworkPolicyInformer.
-	WorkspaceNetworkPolicies() WorkspaceNetworkPolicyInformer
+	// NamespaceNetworkPolicies returns a NamespaceNetworkPolicyInformer.
+	NamespaceNetworkPolicies() NamespaceNetworkPolicyInformer
 }
 
 type version struct {
@@ -39,7 +39,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// WorkspaceNetworkPolicies returns a WorkspaceNetworkPolicyInformer.
-func (v *version) WorkspaceNetworkPolicies() WorkspaceNetworkPolicyInformer {
-	return &workspaceNetworkPolicyInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+// NamespaceNetworkPolicies returns a NamespaceNetworkPolicyInformer.
+func (v *version) NamespaceNetworkPolicies() NamespaceNetworkPolicyInformer {
+	return &namespaceNetworkPolicyInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

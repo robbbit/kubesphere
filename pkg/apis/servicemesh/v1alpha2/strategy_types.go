@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"github.com/knative/pkg/apis/istio/v1alpha3"
+	"istio.io/api/networking/v1alpha3"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -93,7 +93,7 @@ type VirtualServiceTemplateSpec struct {
 
 	// Spec indicates the behavior of a virtual service.
 	// +optional
-	Spec v1alpha3.VirtualServiceSpec `json:"spec,omitempty"`
+	Spec v1alpha3.VirtualService `json:"spec,omitempty"`
 }
 
 // StrategyStatus defines the observed state of Strategy
@@ -103,17 +103,17 @@ type StrategyStatus struct {
 
 	// The latest available observations of an object's current state.
 	// +optional
-	Conditions []StrategyCondition
+	Conditions []StrategyCondition `json:"conditions,omitempty"`
 
 	// Represents time when the strategy was acknowledged by the controller.
 	// It is represented in RFC3339 form and is in UTC.
 	// +optional
-	StartTime *metav1.Time
+	StartTime *metav1.Time `json:"startTime,omitempty"`
 
 	// Represents time when the strategy was completed.
 	// It is represented in RFC3339 form and is in UTC.
 	// +optional
-	CompletionTime *metav1.Time
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 }
 
 type StrategyConditionType string
@@ -130,25 +130,25 @@ const (
 // StrategyCondition describes current state of a strategy.
 type StrategyCondition struct {
 	// Type of strategy condition, Complete or Failed.
-	Type StrategyConditionType
+	Type StrategyConditionType `json:"type,omitempty"`
 
 	// Status of the condition, one of True, False, Unknown
-	Status apiextensions.ConditionStatus
+	Status apiextensions.ConditionStatus `json:"status,omitempty"`
 
 	// Last time the condition was checked.
 	// +optional
-	LastProbeTime metav1.Time
+	LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
 
 	// Last time the condition transit from one status to another
 	// +optional
-	LastTransitionTime metav1.Time
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
 
 	// reason for the condition's last transition
-	Reason string
+	Reason string `json:"reason,omitempty"`
 
 	// Human readable message indicating details about last transition.
 	// +optinal
-	Message string
+	Message string `json:"message,omitempty"`
 }
 
 // +genclient

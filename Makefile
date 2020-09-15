@@ -2,9 +2,6 @@
 # Use of this source code is governed by a Apache license
 # that can be found in the LICENSE file.
 
-# The binary to build 
-BIN ?= ks-apiserver
-
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true"
 
@@ -15,8 +12,6 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
-
-IMG ?= kubespheredev/ks-apiserver
 OUTPUT_DIR=bin
 GOFLAGS=-mod=vendor
 define ALL_HELP_INFO
@@ -39,27 +34,19 @@ define ALL_HELP_INFO
 #           debugging tools like delve.
 endef
 .PHONY: all
-all: test ks-apiserver ks-apigateway ks-iam controller-manager clientset
+all: test ks-apiserver controller-manager
 
 # Build ks-apiserver binary
-ks-apiserver: test
+ks-apiserver: fmt vet
 	hack/gobuild.sh cmd/ks-apiserver
 
-# Build ks-apigateway binary
-ks-apigateway: test
-	hack/gobuild.sh cmd/ks-apigateway
-
-# Build ks-iam binary
-ks-iam: test
-	hack/gobuild.sh cmd/ks-iam
-
 # Build controller-manager binary
-controller-manager: test
+controller-manager: fmt vet
 	hack/gobuild.sh cmd/controller-manager
 
 # Run go fmt against code 
 fmt: generate
-	go fmt ./pkg/... ./cmd/...
+	gofmt -w ./pkg ./cmd ./tools ./api
 
 # Run go vet against code
 vet: generate
@@ -67,7 +54,7 @@ vet: generate
 
 # Generate manifests e.g. CRD, RBAC etc.
 manifests:
-	go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go all
+	go run ./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen/main.go object:headerFile=./hack/boilerplate.go.txt paths=./pkg/apis/... rbac:roleName=controller-perms ${CRD_OPTIONS} output:crd:artifacts:config=config/crds
 
 deploy: manifests
 	kubectl apply -f config/crds
@@ -76,16 +63,31 @@ deploy: manifests
 # generate will generate crds' deepcopy & go openapi structs
 # Futher more about go:genreate . https://blog.golang.org/generate
 generate:
-	GO111MODULE=on go install -mod=vendor k8s.io/code-generator/cmd/deepcopy-gen
 	go generate ./pkg/... ./cmd/...
 
+mockgen:
+	mockgen -package=openpitrix -source=pkg/simple/client/openpitrix/openpitrix.go -destination=pkg/simple/client/openpitrix/mock.go
+
+deepcopy:
+	GO111MODULE=on go install -mod=vendor k8s.io/code-generator/cmd/deepcopy-gen
+	${GOPATH}/bin/deepcopy-gen -i kubesphere.io/kubesphere/pkg/apis/... -h ./hack/boilerplate.go.txt -O zz_generated.deepcopy
+
+openapi:
+	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./pkg/apis/tenant/v1alpha1 -p kubesphere.io/kubesphere/pkg/apis/tenant/v1alpha1 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list
+	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./pkg/apis/servicemesh/v1alpha2 -p kubesphere.io/kubesphere/pkg/apis/servicemesh/v1alpha2 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list
+	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/api/networking/v1,./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./vendor/k8s.io/apimachinery/pkg/util/intstr,./pkg/apis/network/v1alpha1 -p kubesphere.io/kubesphere/pkg/apis/network/v1alpha1 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list
+	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./pkg/apis/devops/v1alpha1,./vendor/k8s.io/apimachinery/pkg/runtime,./vendor/k8s.io/api/core/v1 -p kubesphere.io/kubesphere/pkg/apis/devops/v1alpha1 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list
+	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./pkg/apis/cluster/v1alpha1,./vendor/k8s.io/apimachinery/pkg/runtime,./vendor/k8s.io/api/core/v1 -p kubesphere.io/kubesphere/pkg/apis/cluster/v1alpha1 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list
+	go run ./vendor/k8s.io/kube-openapi/cmd/openapi-gen/openapi-gen.go -O openapi_generated -i ./vendor/k8s.io/apimachinery/pkg/apis/meta/v1,./pkg/apis/devops/v1alpha3,./vendor/k8s.io/apimachinery/pkg/runtime -p kubesphere.io/kubesphere/pkg/apis/devops/v1alpha3 -h ./hack/boilerplate.go.txt --report-filename ./api/api-rules/violation_exceptions.list
+	go run ./tools/cmd/crd-doc-gen/main.go
+	go run ./tools/cmd/doc-gen/main.go
 # Build the docker image
 docker-build: all
-	docker build . -t ${IMG}
+	hack/docker_build.sh
 
 # Run tests
 test: fmt vet
-	export KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=1m; go test ./pkg/... ./cmd/... -coverprofile cover.out
+	export KUBEBUILDER_CONTROLPLANE_START_TIMEOUT=1m; go test ./pkg/... ./cmd/... -covermode=atomic -coverprofile=coverage.txt
 
 .PHONY: clean
 clean:
@@ -94,7 +96,7 @@ clean:
 
 # find or download controller-gen
 # download controller-gen if necessary
-clientset: generate
+clientset: 
 	./hack/generate_client.sh
 
 
@@ -106,7 +108,7 @@ internal-crds:
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./pkg/apis/network/..." output:crd:artifacts:config=config/crd/bases
 
 internal-generate-apis: internal-controller-gen
-	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths=./pkg/apis/...
+	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths=./pkg/apis/network/...
 
 internal-controller-gen:
 ifeq (, $(shell which controller-gen))
@@ -115,3 +117,7 @@ CONTROLLER_GEN=$(GOBIN)/controller-gen
 else
 CONTROLLER_GEN=$(shell which controller-gen)
 endif
+
+network-rbac:
+	$(CONTROLLER_GEN) paths=./pkg/controller/network/provider/ paths=./pkg/controller/network/ rbac:roleName=network-manager output:rbac:artifacts:config=kustomize/network/calico-k8s
+	$(CONTROLLER_GEN) paths=./pkg/controller/network/ rbac:roleName=network-manager output:rbac:artifacts:config=kustomize/network/calico-etcd

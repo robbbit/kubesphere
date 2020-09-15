@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The KubeSphere authors.
+Copyright 2020 The KubeSphere Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	rest "k8s.io/client-go/rest"
 	v1alpha1 "kubesphere.io/kubesphere/pkg/apis/devops/v1alpha1"
 	"kubesphere.io/kubesphere/pkg/client/clientset/versioned/scheme"
@@ -28,6 +27,9 @@ import (
 type DevopsV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	S2iBinariesGetter
+	S2iBuildersGetter
+	S2iBuilderTemplatesGetter
+	S2iRunsGetter
 }
 
 // DevopsV1alpha1Client is used to interact with features provided by the devops.kubesphere.io group.
@@ -37,6 +39,18 @@ type DevopsV1alpha1Client struct {
 
 func (c *DevopsV1alpha1Client) S2iBinaries(namespace string) S2iBinaryInterface {
 	return newS2iBinaries(c, namespace)
+}
+
+func (c *DevopsV1alpha1Client) S2iBuilders(namespace string) S2iBuilderInterface {
+	return newS2iBuilders(c, namespace)
+}
+
+func (c *DevopsV1alpha1Client) S2iBuilderTemplates() S2iBuilderTemplateInterface {
+	return newS2iBuilderTemplates(c)
+}
+
+func (c *DevopsV1alpha1Client) S2iRuns(namespace string) S2iRunInterface {
+	return newS2iRuns(c, namespace)
 }
 
 // NewForConfig creates a new DevopsV1alpha1Client for the given config.
@@ -71,7 +85,7 @@ func setConfigDefaults(config *rest.Config) error {
 	gv := v1alpha1.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
-	config.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: scheme.Codecs}
+	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()

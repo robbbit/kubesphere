@@ -18,6 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+GOPATH=`go env GOPATH`
 # generate-groups generates everything for a project with external types only, e.g. a project based
 # on CustomResourceDefinitions.
 
@@ -48,7 +49,6 @@ shift 4
 
 
 GO111MODULE=on go install -mod=vendor k8s.io/code-generator/cmd/{client-gen,lister-gen,informer-gen}
-
 
 function codegen::join() { local IFS="$1"; shift; echo "$*"; }
 

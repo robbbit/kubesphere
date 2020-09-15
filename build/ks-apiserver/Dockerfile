@@ -1,18 +1,16 @@
-# Copyright 2018 The KubeSphere Authors. All rights reserved.
-# Use of this source code is governed by a Apache license
+# Copyright 2020 The KubeSphere Authors. All rights reserved.
+# Use of this source code is governed by an Apache license
 # that can be found in the LICENSE file.
+FROM alpine:3.11
 
-# Copyright 2018 The KubeSphere Authors. All rights reserved.
-# Use of this source code is governed by a Apache license
-# that can be found in the LICENSE file.
-FROM golang:1.12 as ks-apiserver-builder
+RUN apk add --no-cache ca-certificates 
 
-COPY / /go/src/kubesphere.io/kubesphere
+# To speed up building process, we copy binary directly from make
+# result instead of building it again, so make sure you run the 
+# following command first before building docker image
+#   make ks-apiserver
+#
+COPY  /bin/cmd/ks-apiserver /usr/local/bin/
 
-WORKDIR /go/src/kubesphere.io/kubesphere
-RUN CGO_ENABLED=0 GO111MODULE=on GOOS=linux GOARCH=amd64 GOFLAGS=-mod=vendor go build -i -ldflags '-w -s' -o ks-apiserver cmd/ks-apiserver/apiserver.go
-
-FROM alpine:3.9
-RUN apk add --update ca-certificates && update-ca-certificates
-COPY --from=ks-apiserver-builder /go/src/kubesphere.io/kubesphere/ks-apiserver /usr/local/bin/
+EXPOSE 9090
 CMD ["sh"]

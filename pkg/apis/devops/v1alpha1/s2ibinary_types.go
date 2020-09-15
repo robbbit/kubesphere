@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The KubeSphere authors.
+Copyright 2020 The KubeSphere Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,23 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	ResourceKindS2iBinary     = "S2iBinary"
+	ResourceSingularS2iBinary = "s2ibinary"
+	ResourcePluralS2iBinary   = "s2ibinaries"
+)
+
+const (
+	StatusUploading    = "Uploading"
+	StatusReady        = "Ready"
+	StatusUploadFailed = "UploadFailed"
+)
+
+const (
+	S2iBinaryFinalizerName = "s2ibinary.finalizers.kubesphere.io"
+	S2iBinaryLabelKey      = "s2ibinary-name.kubesphere.io"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!

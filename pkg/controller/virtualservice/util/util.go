@@ -1,7 +1,24 @@
+/*
+Copyright 2020 KubeSphere Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package util
 
 import (
-	"github.com/knative/pkg/apis/istio/v1alpha3"
+	"istio.io/api/networking/v1alpha3"
+	clientgonetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strings"
@@ -90,25 +107,32 @@ func IsApplicationComponent(lbs map[string]string) bool {
 }
 
 // if virtualservice not specified with port number, then fill with service first port
-func FillDestinationPort(vs *v1alpha3.VirtualService, service *v1.Service) {
+func FillDestinationPort(vs *clientgonetworkingv1alpha3.VirtualService, service *v1.Service) {
 	// fill http port
 	for i := range vs.Spec.Http {
 		for j := range vs.Spec.Http[i].Route {
-			if vs.Spec.Http[i].Route[j].Destination.Port.Number == 0 {
-				vs.Spec.Http[i].Route[j].Destination.Port.Number = uint32(service.Spec.Ports[0].Port)
+			port := vs.Spec.Http[i].Route[j].Destination.Port
+			if port == nil || port.Number == 0 {
+				vs.Spec.Http[i].Route[j].Destination.Port = &v1alpha3.PortSelector{
+					Number: uint32(service.Spec.Ports[0].Port),
+				}
 			}
 		}
 
-		if vs.Spec.Http[i].Mirror != nil && vs.Spec.Http[i].Mirror.Port.Number == 0 {
-			vs.Spec.Http[i].Mirror.Port.Number = uint32(service.Spec.Ports[0].Port)
+		if vs.Spec.Http[i].Mirror != nil && (vs.Spec.Http[i].Mirror.Port == nil || vs.Spec.Http[i].Mirror.Port.Number == 0) {
+			vs.Spec.Http[i].Mirror.Port = &v1alpha3.PortSelector{
+				Number: uint32(service.Spec.Ports[0].Port),
+			}
 		}
 	}
 
 	// fill tcp port
 	for i := range vs.Spec.Tcp {
 		for j := range vs.Spec.Tcp[i].Route {
-			if vs.Spec.Tcp[i].Route[j].Destination.Port.Number == 0 {
-				vs.Spec.Tcp[i].Route[j].Destination.Port.Number = uint32(service.Spec.Ports[0].Port)
+			if vs.Spec.Tcp[i].Route[j].Destination.Port == nil || vs.Spec.Tcp[i].Route[j].Destination.Port.Number == 0 {
+				vs.Spec.Tcp[i].Route[j].Destination.Port = &v1alpha3.PortSelector{
+					Number: uint32(service.Spec.Ports[0].Port),
+				}
 			}
 		}
 	}

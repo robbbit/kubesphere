@@ -1,39 +1,58 @@
 /*
+Copyright 2019 The KubeSphere Authors.
 
- Copyright 2019 The KubeSphere Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
 
-     http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 */
+
 package workloads
 
 import (
 	"fmt"
-	"kubesphere.io/kubesphere/pkg/simple/client/k8s"
+	"k8s.io/api/batch/v1"
+	k8serr "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog"
 	"strings"
 	"time"
-
-	"github.com/golang/glog"
-	"k8s.io/api/batch/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const retryTimes = 3
 
-func JobReRun(namespace, jobName string) error {
-	k8sClient := k8s.Client()
-	job, err := k8sClient.BatchV1().Jobs(namespace).Get(jobName, metav1.GetOptions{})
+type JobRunner interface {
+	JobReRun(namespace, name, resourceVersion string) error
+}
+
+type jobRunner struct {
+	client kubernetes.Interface
+}
+
+func NewJobRunner(client kubernetes.Interface) JobRunner {
+	return &jobRunner{client: client}
+}
+
+func (r *jobRunner) JobReRun(namespace, jobName, resourceVersion string) error {
+	job, err := r.client.BatchV1().Jobs(namespace).Get(jobName, metav1.GetOptions{})
 	if err != nil {
+		return err
+	}
+	// do not rerun job if resourceVersion not match
+	if job.GetObjectMeta().GetResourceVersion() != resourceVersion {
+		err := k8serr.NewConflict(schema.GroupResource{
+			Group: job.GetObjectKind().GroupVersionKind().Group, Resource: "job",
+		}, jobName, fmt.Errorf("please apply your changes to the latest version and try again"))
+		klog.Warning(err)
 		return err
 	}
 
@@ -46,15 +65,15 @@ func JobReRun(namespace, jobName string) error {
 	delete(newJob.Spec.Selector.MatchLabels, "controller-uid")
 	delete(newJob.Spec.Template.ObjectMeta.Labels, "controller-uid")
 
-	err = deleteJob(namespace, jobName)
+	err = r.deleteJob(namespace, jobName)
 
 	if err != nil {
-		glog.Errorf("failed to rerun job %s, reason: %s", jobName, err)
+		klog.Errorf("failed to rerun job %s, reason: %s", jobName, err)
 		return fmt.Errorf("failed to rerun job %s", jobName)
 	}
 
 	for i := 0; i < retryTimes; i++ {
-		_, err = k8sClient.BatchV1().Jobs(namespace).Create(&newJob)
+		_, err = r.client.BatchV1().Jobs(namespace).Create(&newJob)
 		if err != nil {
 			time.Sleep(time.Second)
 			continue
@@ -63,16 +82,15 @@ func JobReRun(namespace, jobName string) error {
 	}
 
 	if err != nil {
-		glog.Errorf("failed to rerun job %s, reason: %s", jobName, err)
+		klog.Errorf("failed to rerun job %s, reason: %s", jobName, err)
 		return fmt.Errorf("failed to rerun job %s", jobName)
 	}
 
 	return nil
 }
 
-func deleteJob(namespace, job string) error {
-	k8sClient := k8s.Client()
+func (r *jobRunner) deleteJob(namespace, job string) error {
 	deletePolicy := metav1.DeletePropagationBackground
-	err := k8sClient.BatchV1().Jobs(namespace).Delete(job, &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
+	err := r.client.BatchV1().Jobs(namespace).Delete(job, &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
 	return err
 }

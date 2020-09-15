@@ -1,3 +1,19 @@
+/*
+Copyright 2020 KubeSphere Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package virtualservice
 
 import (
@@ -5,7 +21,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/knative/pkg/apis/istio/v1alpha3"
+	apinetworkingv1alpha3 "istio.io/api/networking/v1alpha3"
+	clientgonetworkingv1alpha3 "istio.io/client-go/pkg/apis/networking/v1alpha3"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,13 +33,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/kubernetes/pkg/util/metrics"
+	log "k8s.io/klog"
 	"kubesphere.io/kubesphere/pkg/controller/virtualservice/util"
-	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 
-	istioclient "github.com/knative/pkg/client/clientset/versioned"
-	istioinformers "github.com/knative/pkg/client/informers/externalversions/istio/v1alpha3"
-	istiolisters "github.com/knative/pkg/client/listers/istio/v1alpha3"
+	istioclient "istio.io/client-go/pkg/clientset/versioned"
+	istioinformers "istio.io/client-go/pkg/informers/externalversions/networking/v1alpha3"
+	istiolisters "istio.io/client-go/pkg/listers/networking/v1alpha3"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -45,8 +61,6 @@ const (
 	// 5ms, 10ms, 20ms, 40ms, 80ms, 160ms, 320ms, 640ms, 1.3s, 2.6s, 5.1s, 10.2s, 20.4s, 41s, 82s
 	maxRetries = 15
 )
-
-var log = logf.Log.WithName("virtualservice-controller")
 
 type VirtualServiceController struct {
 	client clientset.Interface
@@ -88,10 +102,6 @@ func NewVirtualServiceController(serviceInformer coreinformers.ServiceInformer,
 	})
 	broadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: client.CoreV1().Events("")})
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "virtualservice-controller"})
-
-	if client != nil && client.CoreV1().RESTClient().GetRateLimiter() != nil {
-		metrics.RegisterMetricAndTrackRateLimiterUsage("virtualservice_controller", client.CoreV1().RESTClient().GetRateLimiter())
-	}
 
 	v := &VirtualServiceController{
 		client:               client,
@@ -152,7 +162,7 @@ func (v *VirtualServiceController) Run(workers int, stopCh <-chan struct{}) erro
 	defer utilruntime.HandleCrash()
 	defer v.queue.ShutDown()
 
-	log.Info("starting virtualservice controller")
+	log.V(0).Info("starting virtualservice controller")
 	defer log.Info("shutting down virtualservice controller")
 
 	if !cache.WaitForCacheSync(stopCh, v.serviceSynced, v.virtualServiceSynced, v.destinationRuleSynced, v.strategySynced) {
@@ -219,7 +229,7 @@ func (v *VirtualServiceController) syncService(key string) error {
 	appName := name
 
 	defer func() {
-		log.V(4).Info("Finished syncing service virtualservice.", "namespace", namespace, "name", name, "duration", time.Since(startTime))
+		log.V(4).Infof("Finished syncing service virtualservice %s/%s in %s.", namespace, name, time.Since(startTime))
 	}()
 
 	service, err := v.serviceLister.Services(namespace).Get(name)
@@ -291,7 +301,7 @@ func (v *VirtualServiceController) syncService(key string) error {
 	currentVirtualService, err := v.virtualServiceLister.VirtualServices(namespace).Get(appName)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			currentVirtualService = &v1alpha3.VirtualService{
+			currentVirtualService = &clientgonetworkingv1alpha3.VirtualService{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      appName,
 					Namespace: namespace,
@@ -312,13 +322,13 @@ func (v *VirtualServiceController) syncService(key string) error {
 
 	// check if service has TCP protocol ports
 	for _, port := range service.Spec.Ports {
-		var route v1alpha3.DestinationWeight
+		var route apinetworkingv1alpha3.HTTPRouteDestination
 		if port.Protocol == v1.ProtocolTCP {
-			route = v1alpha3.DestinationWeight{
-				Destination: v1alpha3.Destination{
+			route = apinetworkingv1alpha3.HTTPRouteDestination{
+				Destination: &apinetworkingv1alpha3.Destination{
 					Host:   name,
 					Subset: subsets[0].Name,
-					Port: v1alpha3.PortSelector{
+					Port: &apinetworkingv1alpha3.PortSelector{
 						Number: uint32(port.Port),
 					},
 				},
@@ -327,12 +337,20 @@ func (v *VirtualServiceController) syncService(key string) error {
 
 			// a http port, add to HTTPRoute
 			if len(port.Name) > 0 && (port.Name == "http" || strings.HasPrefix(port.Name, "http-")) {
-				vs.Spec.Http = []v1alpha3.HTTPRoute{{Route: []v1alpha3.DestinationWeight{route}}}
+				vs.Spec.Http = []*apinetworkingv1alpha3.HTTPRoute{{Route: []*apinetworkingv1alpha3.HTTPRouteDestination{&route}}}
 				break
 			}
 
 			// everything else treated as TCPRoute
-			vs.Spec.Tcp = []v1alpha3.TCPRoute{{Route: []v1alpha3.DestinationWeight{route}}}
+			tcpRoute := apinetworkingv1alpha3.TCPRoute{
+				Route: []*apinetworkingv1alpha3.RouteDestination{
+					{
+						Destination: route.Destination,
+						Weight:      route.Weight,
+					},
+				},
+			}
+			vs.Spec.Tcp = []*apinetworkingv1alpha3.TCPRoute{&tcpRoute}
 		}
 	}
 
@@ -414,7 +432,7 @@ func (v *VirtualServiceController) syncService(key string) error {
 // When a destinationrule is added, figure out which service it will be used
 // and enqueue it. obj must have *v1alpha3.DestinationRule type
 func (v *VirtualServiceController) addDestinationRule(obj interface{}) {
-	dr := obj.(*v1alpha3.DestinationRule)
+	dr := obj.(*clientgonetworkingv1alpha3.DestinationRule)
 	service, err := v.serviceLister.Services(dr.Namespace).Get(dr.Name)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -425,22 +443,13 @@ func (v *VirtualServiceController) addDestinationRule(obj interface{}) {
 		return
 	}
 
-	_, err = v.virtualServiceLister.VirtualServices(dr.Namespace).Get(dr.Name)
+	key, err := cache.MetaNamespaceKeyFunc(service)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			key, err := cache.MetaNamespaceKeyFunc(service)
-			if err != nil {
-				utilruntime.HandleError(fmt.Errorf("get service %s/%s key failed", service.Namespace, service.Name))
-				return
-			}
-
-			v.queue.Add(key)
-		}
-	} else {
-		// Already have a virtualservice created.
+		utilruntime.HandleError(fmt.Errorf("get service %s/%s key failed", service.Namespace, service.Name))
+		return
 	}
 
-	return
+	v.queue.Add(key)
 }
 
 // when a strategy created
@@ -486,7 +495,7 @@ func (v *VirtualServiceController) addStrategy(obj interface{}) {
 }
 
 func (v *VirtualServiceController) handleErr(err error, key interface{}) {
-	if err != nil {
+	if err == nil {
 		v.queue.Forget(key)
 		return
 	}
@@ -530,17 +539,17 @@ func (v *VirtualServiceController) getSubsets(strategy *servicemeshv1alpha2.Stra
 	return set
 }
 
-func (v *VirtualServiceController) generateVirtualServiceSpec(strategy *servicemeshv1alpha2.Strategy, service *v1.Service) *v1alpha3.VirtualService {
+func (v *VirtualServiceController) generateVirtualServiceSpec(strategy *servicemeshv1alpha2.Strategy, service *v1.Service) *clientgonetworkingv1alpha3.VirtualService {
 
 	// Define VirtualService to be created
-	vs := &v1alpha3.VirtualService{
+	vs := &clientgonetworkingv1alpha3.VirtualService{
 		Spec: strategy.Spec.Template.Spec,
 	}
 
 	// one version rules them all
 	if len(strategy.Spec.GovernorVersion) > 0 {
-		governorDestinationWeight := v1alpha3.DestinationWeight{
-			Destination: v1alpha3.Destination{
+		governorDestinationWeight := apinetworkingv1alpha3.HTTPRouteDestination{
+			Destination: &apinetworkingv1alpha3.Destination{
 				Host:   service.Name,
 				Subset: strategy.Spec.GovernorVersion,
 			},
@@ -548,16 +557,26 @@ func (v *VirtualServiceController) generateVirtualServiceSpec(strategy *servicem
 		}
 
 		if len(strategy.Spec.Template.Spec.Http) > 0 {
-			governorRoute := v1alpha3.HTTPRoute{
-				Route: []v1alpha3.DestinationWeight{governorDestinationWeight},
+			governorRoute := apinetworkingv1alpha3.HTTPRoute{
+				Route: []*apinetworkingv1alpha3.HTTPRouteDestination{&governorDestinationWeight},
 			}
 
-			vs.Spec.Http = []v1alpha3.HTTPRoute{governorRoute}
+			vs.Spec.Http = []*apinetworkingv1alpha3.HTTPRoute{&governorRoute}
 		} else if len(strategy.Spec.Template.Spec.Tcp) > 0 {
-			governorRoute := v1alpha3.TCPRoute{
-				Route: []v1alpha3.DestinationWeight{governorDestinationWeight},
+			tcpRoute := apinetworkingv1alpha3.TCPRoute{
+				Route: []*apinetworkingv1alpha3.RouteDestination{
+					{
+						Destination: &apinetworkingv1alpha3.Destination{
+							Host:   governorDestinationWeight.Destination.Host,
+							Subset: governorDestinationWeight.Destination.Subset,
+						},
+						Weight: governorDestinationWeight.Weight,
+					},
+				},
 			}
-			vs.Spec.Tcp = []v1alpha3.TCPRoute{governorRoute}
+
+			//governorRoute := v1alpha3.TCPRoute{tcpRoute}
+			vs.Spec.Tcp = []*apinetworkingv1alpha3.TCPRoute{&tcpRoute}
 		}
 
 	}
